@@ -11,6 +11,8 @@ import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.utils.viewport.Viewport
 import com.github.bennyOe.gdxNormalLight.scene2d.NormalMappedActor
 import ktx.math.vec2
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /**
  * A specialized light engine for Scene2D applications, combining normal mapping shaders with Box2D shadow rendering.
@@ -286,6 +288,174 @@ class Scene2dLightEngine(
 
             lastNormalMap = null
             lastSpecularMap = null
+        }
+    }
+
+    /**
+     * Draws a tiled region using a diffuse and normal map, applying normal mapping lighting effects.
+     *
+     * This method binds the normal map to texture unit 1 and the diffuse texture to unit 0, sets the appropriate
+     * shader uniforms, and tiles the region over the specified area. If `flipX` is true, the tiles are mirrored horizontally.
+     *
+     * Use this method within the [renderLights] lambda to ensure lighting and shader context are active.
+     *
+     * @param diffuse The diffuse [TextureRegion] (base color texture).
+     * @param normals The normal map [TextureRegion] (for lighting effects).
+     * @param x The x-coordinate of the area to tile.
+     * @param y The y-coordinate of the area to tile.
+     * @param width The width of the area to tile.
+     * @param height The height of the area to tile.
+     * @param flipX If true, tiles are mirrored on the X axis.
+     * @param scale The scale factor for each tile (default is 1.0).
+     * @param unitScale The scale factor to convert texture pixels to world units (default is 1.0).
+     */
+    fun drawTiled(
+        diffuse: TextureRegion,
+        normals: TextureRegion,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        flipX: Boolean = false,
+        scale: Float = 1.0f,
+        unitScale: Float = 1.0f,
+    ) {
+        if (lastNormalMap == null || normals.texture != lastNormalMap) {
+            batch.flush()
+        }
+        shader.bind()
+        shader.setUniformi("u_useNormalMap", 1)
+        shader.setUniformi("u_useSpecularMap", 0)
+        shader.setUniformi("u_flipX", if (flipX) 1 else 0)
+
+        normals.texture.bind(1)
+        diffuse.texture.bind(0)
+
+        drawTiledRegion(diffuse, x, y, width, height, scale, unitScale)
+
+        lastNormalMap = normals.texture
+        lastSpecularMap = null
+    }
+
+    /**
+     * Draws a tiled region using diffuse, normal, and specular maps, applying normal mapping and specular lighting effects.
+     *
+     * This method binds the normal map to texture unit 1, the specular map to texture unit 2, and the diffuse texture to unit 0.
+     * It sets the appropriate shader uniforms and tiles the region over the specified area. If `flipX` is true, the tiles are mirrored horizontally.
+     *
+     * Use this method within the [renderLights] lambda to ensure lighting and shader context are active.
+     *
+     * @param diffuse The diffuse [TextureRegion] (base color texture).
+     * @param normals The normal map [TextureRegion] (for lighting effects).
+     * @param specular The specular map [TextureRegion] (for highlight effects).
+     * @param x The x-coordinate of the area to tile.
+     * @param y The y-coordinate of the area to tile.
+     * @param width The width of the area to tile.
+     * @param height The height of the area to tile.
+     * @param flipX If true, tiles are mirrored on the X axis.
+     * @param scale The scale factor for each tile (default is 1.0).
+     * @param unitScale The scale factor to convert texture pixels to world units (default is 1.0).
+     */
+    fun drawTiled(
+        diffuse: TextureRegion,
+        normals: TextureRegion,
+        specular: TextureRegion,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        flipX: Boolean = false,
+        scale: Float = 1.0f,
+        unitScale: Float = 1.0f,
+    ) {
+        if (lastNormalMap == null || normals.texture != lastNormalMap) {
+            batch.flush()
+        }
+        if (lastSpecularMap == null || specular.texture != lastSpecularMap) {
+            batch.flush()
+        }
+        shader.bind()
+        shader.setUniformi("u_useNormalMap", 1)
+        shader.setUniformi("u_useSpecularMap", 1)
+        shader.setUniformi("u_flipX", if (flipX) 1 else 0)
+
+        normals.texture.bind(1)
+        specular.texture.bind(2)
+        diffuse.texture.bind(0)
+
+        drawTiledRegion(diffuse, x, y, width, height, scale, unitScale)
+
+        lastNormalMap = normals.texture
+        lastSpecularMap = specular.texture
+    }
+
+    /**
+     * Tiles a given [TextureRegion] over a specified area, drawing only the visible intersections.
+     *
+     * This function calculates the tile size in world units (using [unitScale] and [scale]), determines
+     * which tiles intersect the target area, and draws each tile with the correct source and destination
+     * coordinates. Handles partial tiles at the edges and supports arbitrary scaling.
+     *
+     * @param region The [TextureRegion] to tile.
+     * @param x The x-coordinate of the area to fill (world units).
+     * @param y The y-coordinate of the area to fill (world units).
+     * @param width The width of the area to fill (world units).
+     * @param height The height of the area to fill (world units).
+     * @param scale The scale factor for each tile (default is 1.0).
+     * @param unitScale The scale factor to convert texture pixels to world units (default is 1.0).
+     */
+    private fun drawTiledRegion(
+        region: TextureRegion,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        scale: Float = 1.0f,
+        unitScale: Float = 1.0f,
+    ) {
+        val tileWidthWU = region.regionWidth * unitScale * scale
+        val tileHeightWU = region.regionHeight * unitScale * scale
+        if (tileWidthWU <= 0 || tileHeightWU <= 0) return
+
+        // Calculate the range of columns and rows to draw.
+        val startCol = floor(x / tileWidthWU).toInt()
+        val endCol = ceil((x + width) / tileWidthWU).toInt()
+        val startRow = floor(y / tileHeightWU).toInt()
+        val endRow = ceil((y + height) / tileHeightWU).toInt()
+
+        for (row in startRow until endRow) {
+            for (col in startCol until endCol) {
+                val tileX = col * tileWidthWU
+                val tileY = row * tileHeightWU
+
+                // Calculate the intersection of this tile with the drawing area.
+                val drawX = maxOf(x, tileX)
+                val drawY = maxOf(y, tileY)
+                val intersectionWidth = minOf(x + width, tileX + tileWidthWU) - drawX
+                val intersectionHeight = minOf(y + height, tileY + tileHeightWU) - drawY
+
+                if (intersectionWidth <= 0 || intersectionHeight <= 0) continue
+
+                // Calculate the source region from the texture atlas.
+                val srcX = (drawX - tileX) / tileWidthWU * region.regionWidth
+                val srcY = (drawY - tileY) / tileHeightWU * region.regionHeight
+                val srcWidth = intersectionWidth / tileWidthWU * region.regionWidth
+                val srcHeight = intersectionHeight / tileHeightWU * region.regionHeight
+
+                batch.draw(
+                    region.texture,
+                    drawX,
+                    drawY,
+                    intersectionWidth,
+                    intersectionHeight,
+                    (region.regionX + srcX).toInt(),
+                    (region.regionY + srcY).toInt(),
+                    srcWidth.toInt(),
+                    srcHeight.toInt(),
+                    false,
+                    false,
+                )
+            }
         }
     }
 
