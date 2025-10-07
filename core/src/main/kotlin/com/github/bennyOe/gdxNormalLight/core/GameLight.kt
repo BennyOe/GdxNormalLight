@@ -14,7 +14,7 @@ sealed class GameLight(
     open var b2dLight: Light,
     open var isManaged: Boolean = true,
     internal val baseIntensity: Float = shaderLight.intensity,
-    internal val baseColor: Color = shaderLight.color,
+    internal val baseColor: Color = Color(shaderLight.color),
     internal val baseDistance: Float = b2dLight.distance,
 ) : IGameLight {
     val effectParams: LightEffectParameters = LightEffectParameters()
@@ -29,7 +29,7 @@ sealed class GameLight(
 
     internal var flickerTimer = 0f
     internal var elapsedTime = 0f
-    internal val currentTargetColor = baseColor
+    internal val currentTargetColor = Color(baseColor)
     internal var currentTargetIntensity = baseIntensity
 
     fun setOn(active: Boolean) {
@@ -54,6 +54,7 @@ sealed class GameLight(
         get() = b2dLight.color
         set(value) {
             b2dLight.color = value
+            shaderLight.color.set(value)
         }
 
     data class Directional(
@@ -61,7 +62,7 @@ sealed class GameLight(
         override var b2dLight: Light,
         override var isManaged: Boolean = true,
     ) : GameLight(shaderLight, b2dLight) {
-        var intensity: Float
+        var shaderIntensity: Float
             get() = shaderLight.intensity
             set(value) {
                 shaderLight.intensity = value
@@ -70,8 +71,8 @@ sealed class GameLight(
         var direction: Float
             get() = shaderLight.direction
             set(value) {
-                shaderLight.direction = value
-                b2dLight.direction = value
+                shaderLight.direction = value + 180f
+                b2dLight.direction = value + 180f
             }
 
         override fun update() {

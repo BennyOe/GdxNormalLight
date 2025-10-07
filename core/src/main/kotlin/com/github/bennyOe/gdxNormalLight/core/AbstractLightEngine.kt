@@ -19,7 +19,6 @@ import com.github.bennyOe.gdxNormalLight.core.utils.worldToScreenSpace
 import ktx.assets.disposeSafely
 import ktx.math.vec3
 import ktx.math.vec4
-import kotlin.apply
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -56,6 +55,8 @@ abstract class AbstractLightEngine(
     val entityCategory: Short = 0x0001.toShort(),
     val entityMask: Short = -1,
     val lightActivationRadius: Float = -1f,
+    val lightViewportScale: Float = 2f,
+    refreshRateHz: Float? = null,
 ) {
     protected val vertShader: FileHandle = Gdx.files.internal("shader/light.vert")
     protected val fragShader: FileHandle = Gdx.files.internal("shader/light.frag")
@@ -71,12 +72,52 @@ abstract class AbstractLightEngine(
     protected var specularRemapMin = 0.1f
     protected var specularRemapMax = 0.5f
     private val density = Gdx.graphics.backBufferScale
+    private val lightCam = OrthographicCamera()
+    private var lightAcc = 0f
+    private var refreshStep: Float? = refreshRateHz?.let { 1f / it }
 
     init {
         setupShader()
         RayHandler.useDiffuseLight(useDiffuseLight)
         updateShaderAmbientColor(Color(1f, 1f, 1f, 1.0f))
         rayHandler.setAmbientLight(.1f, .1f, .1f, .1f)
+    }
+
+    /**
+     * Renders all Box2D lights managed by the engine.
+     *
+     * This method updates the Box2D light system's combined matrix using the current camera,
+     * then renders all active Box2D lights (shadows, lightmaps) to the screen.
+     * Call this after updating and activating lights, and before drawing the final scene.
+     */
+    fun renderBox2dLights() {
+        lightCam.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
+
+        lightCam.position.set(cam.position)
+        lightCam.zoom = cam.zoom
+        lightCam.update()
+
+        rayHandler.setCombinedMatrix(
+            lightCam.combined,
+            cam.position.x,
+            cam.position.y,
+            viewport.worldWidth * lightViewportScale,
+            viewport.worldHeight * lightViewportScale,
+        )
+
+        val step = refreshStep
+        if (step == null) {
+            // Uncapped: do the full update every frame
+            rayHandler.update()
+        } else {
+            // Capped: fixed update cadence (e.g. 60 Hz)
+            lightAcc += Gdx.graphics.deltaTime
+            while (lightAcc >= step) {
+                rayHandler.update()
+                lightAcc -= step
+            }
+        }
+        rayHandler.render()
     }
 
     /**
@@ -101,9 +142,70 @@ abstract class AbstractLightEngine(
     }
 
     /**
-     * Enables or disables diffuse lighting mode for the Box2D RayHandler.
+     * Sets the batch's shader to a provided custom shader, disabling the engine's lighting shader.
      *
-     * @param value If true, diffuse lighting is enabled; if false, it is disabled.
+     * This method assigns the given `customShader` to the `SpriteBatch`, overriding the engine's lighting shader.
+     * Use this when you want to render with a different shader (e.g., for special effects or post-processing).
+     * After calling this, rendering will use the specified custom shader until you restore the engine or default shader.
+     * @param customShader The [ShaderProgram] to render.
+     */
+    fun setShaderToCustomShader(customShader: ShaderProgram) {
+        batch.shader = customShader
+    }
+
+    /**
+     * Sets an overlay color and its strength for the current batch shader.
+     *
+     * This method flushes the current batch, then updates the shader uniforms
+     * `u_overlayColor` and `u_overlayStrength` to apply a color overlay effect.
+     *
+     * **Warning:** This method calls `batch.flush()` before setting the uniform, which will immediately render all currently batched draw calls.
+     * This can affect batching performance and may have side effects if called between draw operations.
+     *
+     * @param color The overlay color to apply.
+     * @param strength The strength of the overlay, clamped between 0.0 and 1.0.
+     */
+    fun setOverlayColor(
+        color: Color,
+        strength: Float,
+    ) {
+        batch.flush()
+        batch.shader.setUniformf("u_overlayColor", color)
+        batch.shader.setUniformf("u_overlayStrength", strength.coerceIn(0f, 1f))
+    }
+
+    /**
+     * Resets the overlay color effect in the current batch shader.
+     *
+     * This method flushes the current batch and sets the overlay strength uniform (`u_overlayStrength`) to 0,
+     * effectively disabling any overlay color previously applied.
+     *
+     * **Warning:** This method calls `batch.flush()`, which immediately renders all currently batched draw calls.
+     * Use with care between draw operations to avoid unintended batching side effects.
+     */
+
+    fun resetOverlayColor() {
+        batch.flush()
+        batch.shader.setUniformf("u_overlayStrength", 0f)
+    }
+
+    /** Change refresh rate at runtime; pass null to disable capping. */
+    fun setRefreshRate(hz: Float?) {
+        refreshStep = hz?.takeIf { it > 0f }?.let { 1f / it }
+        lightAcc = 0f // reset accumulator for clean phase
+    }
+
+    /**
+     * Enables or disables **diffuse** compositing for the Box2D lightmap (`RayHandler.useDiffuseLight`).
+     *
+     * - `true` → *Diffuse / multiplicative* blend: unlit areas are darkened, overall contrast increases.
+     *   - Box2D ambient: **RGB** controls perceived brightness; **alpha is ignored** by box2dLight in this mode.
+     *   - Normal/specular from the shader are **not** changed mathematically, but appear more pronounced due to the darker base.
+     * - `false` → *Additive* blend: the Box2D lightmap is additively added on top of the scene.
+     *   - Box2D ambient: **alpha is applied** and can brighten/darken the scene effectively; RGB also contributes.
+     *   - Normal/specular may look flatter because the base scene isn’t darkened.
+     *
+     * @param value `true` to enable diffuse/multiplicative compositing, `false` for additive compositing.
      */
     fun setDiffuseLight(value: Boolean) {
         RayHandler.useDiffuseLight(value)
@@ -205,12 +307,11 @@ abstract class AbstractLightEngine(
         entityMask: Short = this.entityMask,
         isManaged: Boolean = true,
     ): GameLight.Directional {
-        val correctedDirection = -direction
         val shaderLight =
             ShaderLight.Directional(
                 color = color,
                 intensity = initialIntensity,
-                direction = correctedDirection,
+                direction = direction,
                 elevation = elevation,
             )
         val b2dLight =
@@ -218,7 +319,7 @@ abstract class AbstractLightEngine(
                 rayHandler,
                 rays,
                 color,
-                correctedDirection,
+                direction + 180f,
             ).apply {
                 isStaticLight = isStatic
                 isSoft = isSoftShadow
@@ -565,7 +666,7 @@ abstract class AbstractLightEngine(
      * Sets the ambient light for the scene in box2dLight.
      * This is the base light color and intensity that affects all objects,
      * regardless of dynamic lights.
-     * @param ambient The [Color] to use for ambient light. The color's alpha component acts as the intensity.
+     * @param ambient The [Color] to use for ambient light. The color's alpha component acts as the intensity (only when diffuseLight is false).
      */
     fun setBox2dAmbientLight(ambient: Color) {
         rayHandler.setAmbientLight(ambient)
@@ -612,6 +713,9 @@ abstract class AbstractLightEngine(
         shader.setUniformf("u_specularIntensity", specularIntensityValue)
         shader.setUniformf("u_specularRemapMin", specularRemapMin)
         shader.setUniformf("u_specularRemapMax", specularRemapMax)
+
+        // reset the color overlay
+        shader.setUniformf("u_overlayStrength", 0f)
 
         // Scale the viewport uniforms to match the physical pixel space of gl_FragCoord.
         val screenX = viewport.screenX * density

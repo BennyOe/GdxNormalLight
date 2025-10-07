@@ -49,6 +49,10 @@ uniform vec4 lightColor[MAX_LIGHTS];  // Light's color (rgb) and intensity (a).
 uniform float coneAngle[MAX_LIGHTS];  // For spotlights, the pre-calculated cosine of the cone's half-angle.
 uniform vec3 falloff[MAX_LIGHTS];     // For point/spot lights, the constant, linear, and quadratic falloff factors.
 
+// color overlay for effects like underwater tinting, power-up glows, hitstop, etc.
+uniform vec4 u_overlayColor;
+uniform float u_overlayStrength;
+
 void main() {
     // 1. Get the base color from the diffuse texture.
     vec4 diffuseColor = texture2D(u_texture, v_texCoord);
@@ -149,6 +153,9 @@ void main() {
 
     // 7. Calculate the final color by modulating the texture's color with the total light.
     vec3 finalColor = (diffuseColor.rgb * totalLight) + totalSpecular;
+
+    // 7a. Apply the color overlay effect.
+    finalColor.rgb = mix(finalColor.rgb, u_overlayColor.rgb, u_overlayStrength);
 
     // 8. Set the final fragment color, retaining the original texture's alpha.
     gl_FragColor = v_color * vec4(finalColor, diffuseColor.a);

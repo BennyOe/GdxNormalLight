@@ -220,8 +220,8 @@ class LightDemo : AbstractLightDemo() {
         // Always allow control over the directional light
         val dirIntensitySpeed = DIRECTIONAL_INTENSITY_SPEED * delta
         val dirAngleSpeed = DIRECTIONAL_ANGLE_SPEED * delta
-        if (Gdx.input.isKeyPressed(Input.Keys.I)) directionalLight.intensity += dirIntensitySpeed
-        if (Gdx.input.isKeyPressed(Input.Keys.K)) directionalLight.intensity -= dirIntensitySpeed
+        if (Gdx.input.isKeyPressed(Input.Keys.I)) directionalLight.shaderIntensity += dirIntensitySpeed
+        if (Gdx.input.isKeyPressed(Input.Keys.K)) directionalLight.shaderIntensity -= dirIntensitySpeed
         if (Gdx.input.isKeyPressed(Input.Keys.O)) directionalLight.direction += dirAngleSpeed
         if (Gdx.input.isKeyPressed(Input.Keys.L)) directionalLight.direction -= dirAngleSpeed
     }

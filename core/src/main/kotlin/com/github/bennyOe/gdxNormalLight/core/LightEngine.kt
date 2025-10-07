@@ -34,12 +34,13 @@ class LightEngine(
     cam: OrthographicCamera,
     batch: SpriteBatch,
     viewport: Viewport,
-    private val lightViewportScale: Float = 2f,
+    lightViewportScale: Float = 2f,
     useDiffuseLight: Boolean = true,
     maxShaderLights: Int = 32,
     entityCategory: Short = 0x0001,
     entityMask: Short = -1,
     lightActivationRadius: Float = -1f,
+    refreshRateHz: Float? = null,
 ) : AbstractLightEngine(
     rayHandler,
     cam,
@@ -50,9 +51,9 @@ class LightEngine(
     entityCategory,
     entityMask,
     lightActivationRadius,
+    lightViewportScale,
+    refreshRateHz,
 ) {
-    private val lightCam = OrthographicCamera()
-
     /**
      * Performs the complete lighting render pass using normal mapping and Box2D shadows.
      *
@@ -77,6 +78,26 @@ class LightEngine(
         center: Vector2 = vec2(0f, 0f),
         drawScene: (LightEngine) -> Unit,
     ) {
+        renderSceneWithShader(center, drawScene)
+        renderBox2dLights()
+    }
+
+    /**
+     * Renders the scene using the engine's lighting shader.
+     *
+     * This method sets up the batch with the correct projection matrix and applies the viewport.
+     * It updates the active lights based on the given center position, binds the engine's lighting shader,
+     * and uploads all relevant uniforms. The provided [drawScene] lambda is then invoked, allowing you to
+     * render your scene with lighting effects applied. After rendering, the batch is ended and the default
+     * shader is restored.
+     *
+     * @param center The world position around which lights are prioritized and updated.
+     * @param drawScene Lambda in which your game scene should be rendered with lighting applied.
+     */
+    fun renderSceneWithShader(
+        center: Vector2 = vec2(0f, 0f),
+        drawScene: (LightEngine) -> Unit,
+    ) {
         batch.projectionMatrix = cam.combined
         viewport.apply()
 
@@ -90,21 +111,6 @@ class LightEngine(
         drawScene(this)
         batch.end()
         setShaderToDefaultShader()
-
-        lightCam.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
-        lightCam.position.set(cam.position)
-        lightCam.zoom = cam.zoom
-        lightCam.update()
-
-
-        rayHandler.setCombinedMatrix(
-            lightCam.combined,
-            cam.position.x,
-            cam.position.y,
-            viewport.worldWidth * lightViewportScale,
-            viewport.worldHeight * lightViewportScale,
-        )
-        rayHandler.updateAndRender()
     }
 
     /**
