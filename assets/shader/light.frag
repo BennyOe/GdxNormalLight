@@ -90,7 +90,7 @@ void main() {
 
         if (lightType[i] == 0) { // Light type 0 is DIRECTIONAL
                                  // For directional lights, the light vector is simply its constant direction.
-                                 l = lightDir[i];
+                                 l = -lightDir[i];
 
         } else { // For POINT and SPOT lights
                  // 5a. Calculate the vector from the fragment to the light source.
