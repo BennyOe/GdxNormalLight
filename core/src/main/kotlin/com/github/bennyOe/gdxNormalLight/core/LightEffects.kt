@@ -12,6 +12,7 @@ enum class LightEffectType {
     FAULTY_LAMP,
     LIGHTNING,
     COLOR_CYCLE,
+    OIL_LAMP,
 }
 
 data class LightEffectParameters(
@@ -37,6 +38,7 @@ fun applyLightEffect(light: GameLight) {
     val params = light.effectParams
     when (light.effect) {
         LightEffectType.FIRE -> fire(light, params.fireIntensity)
+        LightEffectType.OIL_LAMP -> oilLamp(light, params.fireIntensity)
         LightEffectType.PULSE -> pulse(light, params.pulseSpeed, params.pulseMinIntensity, params.pulseMaxIntensity)
         LightEffectType.FAULTY_LAMP -> faultyLamp(light, params.faultyLampChanceToFlicker)
         LightEffectType.LIGHTNING -> lightning(light, params.lightningMinDelay, params.lightningMaxDelay)
@@ -76,6 +78,44 @@ private fun fire(
 
     light.b2dLight.setColor(light.shaderLight.color.r, light.shaderLight.color.g, light.shaderLight.color.b, light.b2dLight.color.a)
     light.b2dLight.distance = light.baseDistance + (light.shaderLight.intensity - light.baseIntensity)
+}
+
+private val TMP_COLOR = Color()
+
+private fun oilLamp(
+    light: GameLight,
+    intensity: Float,
+) {
+    val delta = Gdx.graphics.deltaTime
+    light.flickerTimer -= delta
+
+    if (light.flickerTimer <= 0f) {
+        light.flickerTimer = (Math.random() * 0.15f + 0.10f).toFloat()
+
+        val intensityJitter = ((Math.random().toFloat() - 0.5f) * 0.20f) * intensity
+        val targetIntensity =
+            (light.baseIntensity * (1f + intensityJitter))
+                .coerceIn(light.baseIntensity * 0.85f, light.baseIntensity * 1.15f)
+        light.currentTargetIntensity = targetIntensity
+
+        val warmColor = TMP_COLOR.set(1f, 0.82f, 0.45f, 1f)
+        val warmthAmount = (Math.random().toFloat() * 0.08f) * intensity
+        TMP_COLOR.set(light.baseColor).lerp(warmColor, warmthAmount)
+
+        val brightness = 1f + ((Math.random().toFloat() - 0.5f) * 0.10f) * intensity
+        TMP_COLOR.r = (TMP_COLOR.r * brightness).coerceIn(0f, 1f)
+        TMP_COLOR.g = (TMP_COLOR.g * brightness).coerceIn(0f, 1f)
+        TMP_COLOR.b = (TMP_COLOR.b * brightness).coerceIn(0f, 1f)
+
+        light.currentTargetColor.set(TMP_COLOR.r, TMP_COLOR.g, TMP_COLOR.b, light.baseColor.a)
+    }
+
+    val lerpAlpha = 0.35f
+    light.shaderLight.intensity += (light.currentTargetIntensity - light.shaderLight.intensity) * lerpAlpha
+    light.shaderLight.color.lerp(light.currentTargetColor, lerpAlpha)
+
+    light.b2dLight.setColor(light.shaderLight.color.r, light.shaderLight.color.g, light.shaderLight.color.b, light.b2dLight.color.a)
+    light.b2dLight.distance = light.baseDistance + (light.shaderLight.intensity - light.baseIntensity) * 0.6f
 }
 
 private fun pulse(
