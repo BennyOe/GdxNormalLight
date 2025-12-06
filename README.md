@@ -36,6 +36,12 @@ A powerful 2D lighting engine for **LibGDX**, combining dynamic per-pixel lighti
 - **Light culling**  
   Automatically deactivates distant lights to optimize performance.
 
+- **Variable Refresh Rate**
+  Optional Box2D light update capping via refreshRateHz (fixed cadence) to stabilize performance spikes; can be changed at runtime using setRefreshRate(hz)
+
+- **Multipass Rendering**
+  Multi-pass friendly pipeline: render Box2D lights via renderBox2dLights() independently from sprite drawing/compositing
+
 - **Effect System**  
   Lights can have built-in effects like:
   - `FIRE`
@@ -59,7 +65,7 @@ A powerful 2D lighting engine for **LibGDX**, combining dynamic per-pixel lighti
 ```kotlin
 // In core/build.gradle.kts
 dependencies {
-    implementation("io.github.bennyoe:gdx-normal-light:1.0.1")
+    implementation("io.github.bennyoe:gdx-normal-light:1.0.5")
 }
 ```
 
